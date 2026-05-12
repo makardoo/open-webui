@@ -1,53 +1,53 @@
 from datetime import datetime, timezone
 from typing import Optional
-from tinydb import TinyDB, Query
+from uuid import uuid4
 
-db = TinyDB("model_store.json")
-table = db.table("models")
+_store: dict[str, dict] = {}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_model(user_id: str, name: str, base_model: str, system_prompt: Optional[str] = None, params: Optional[dict] = None) -> dict:
-    model = {
-        "id": f"{user_id}_{name}_{_now()}",
+def create_model(user_id: str, data: dict) -> dict:
+    model_id = str(uuid4())
+    now = _now()
+    record = {
+        "id": model_id,
         "user_id": user_id,
-        "name": name,
-        "base_model": base_model,
-        "system_prompt": system_prompt or "",
-        "params": params or {},
-        "created_at": _now(),
-        "updated_at": _now(),
+        "name": data["name"],
+        "provider": data["provider"],
+        "model_id": data["model_id"],
+        "description": data.get("description"),
+        "is_active": data.get("is_active", True),
+        "created_at": now,
+        "updated_at": now,
     }
-    table.insert(model)
-    return model
+    _store[model_id] = record
+    return record
 
 
 def get_model(model_id: str) -> Optional[dict]:
-    M = Query()
-    results = table.search(M.id == model_id)
-    return results[0] if results else None
+    return _store.get(model_id)
 
 
-def list_models_by_user(user_id: str) -> list:
-    M = Query()
-    return table.search(M.user_id == user_id)
+def list_models_by_user(user_id: str) -> list[dict]:
+    return [m for m in _store.values() if m["user_id"] == user_id]
 
 
-def update_model(model_id: str, updates: dict) -> Optional[dict]:
-    M = Query()
-    updates["updated_at"] = _now()
-    table.update(updates, M.id == model_id)
-    return get_model(model_id)
+def update_model(model_id: str, data: dict) -> Optional[dict]:
+    record = _store.get(model_id)
+    if not record:
+        return None
+    for key, value in data.items():
+        if value is not None:
+            record[key] = value
+    record["updated_at"] = _now()
+    return record
 
 
 def delete_model(model_id: str) -> bool:
-    M = Query()
-    removed = table.remove(M.id == model_id)
-    return len(removed) > 0
-
-
-def clear_all_models() -> None:
-    table.truncate()
+    if model_id in _store:
+        del _store[model_id]
+        return True
+    return False
